@@ -191,6 +191,116 @@ command.
         })
     ```
 
+* Confirm you have 4 tests that are passing:
+    ```bash
+    $ pytest
+    ============================================================================================== test session starts ==============================================================================================
+    platform darwin -- Python 3.10.10, pytest-7.2.1, pluggy-1.0.0
+    rootdir: /Users/kttinn/src/aws-cdk-intro-workshop/code/python/unit-test-cicd-workshop, configfile: pytest.ini, testpaths: tests/**/*_test.py
+    plugins: typeguard-2.13.3
+    collected 4 items                                                                                                                                                                                               
+
+    tests/unit/hello_test.py .                                                                                                                                                                                [ 25%]
+    tests/unit/hitcount_test.py ...                                                                                                                                                                           [100%]
+
+    =============================================================================================== 4 passed in 0.38s ===============================================================================================
+    ```
+
+## Add Unit Tests to your Pipeline
+
+* Add execution of the tests to the pipeline by modifying `cdk_workshop/pipeline_stack.py` to include installation of dev packages, as well as execute `pytest` prior to synthesizing:
+    ```python
+            pipeline = pipelines.CodePipeline(
+            self,
+            "Pipeline",
+            synth=pipelines.ShellStep(
+                "Synth",
+                input=pipelines.CodePipelineSource.code_commit(repo, "master"),
+                commands=[
+                    "npm install -g aws-cdk",  
+                    "pip install -r requirements.txt",  
+                    "pip install -r requirements-dev.txt", # installs pytest
+                    "pytest", # runs tests
+                    "npx cdk synth",
+                ]
+            ),
+        )
+    ```
+
+## Add functionality using Test Driven Development (TDD)
+
+The basic way to get started w/ TDD is to write a test that fails initially, but will pass once the desired behavior has been implemented. 
+
+* Write a test that ensures a 400 level (Bad request) response is returned if the event does not include a `path` attribute:
+    ```python
+    def test_handler_returns_400_if_no_path(self, boto_mock):
+        boto_mock.return_value = self.downstreamLambdaResponse
+        
+        event_without_path = {}    
+        expected = {
+            'statusCode': 400,
+            'body': json.dumps({ 'message': 'path not provided'})
+        }
+        actual = handler(event_without_path, {})
+        
+        self.assertEqual(expected, actual)
+    ```
+
+* Run `pytest` and see the test fail:
+    ```bash
+    $ pytest
+    ...
+    FAILED tests/unit/hitcount_test.py::TestHitCountLambda::test_handler_returns_400_if_no_path - KeyError: 'path'
+    ========================================================================================== 1 failed, 4 passed in 0.41s ==========================================================================================
+    ```
+
+* Add logic to the handler to return the expected value if path not defined:
+    ```python
+    def handler(event, context):
+        print('request: {}'.format(json.dumps(event)))
+
+        if not "path" in event:
+            return {
+                'statusCode': 400,
+                'body': json.dumps({ 'message': 'path not provided'})
+            }
+        ...
+    ```
+
+* Run `pytest` and ensure all tests are passing now
+
+* Now that we've test driven some error handling, let's test drive a new feature.  Add the following test to ensure timestamp is written to Dynamo so we can determine when our last hit occurred (you will need to add MagicMock import):
+    ```python
+    from unittest.mock import patch, MagicMock
+    ...
+    @patch('time.time', MagicMock(return_value=12345))
+    def test_handler_set_timestamp(self, boto_mock):
+        boto_mock.return_value = self.downstreamLambdaResponse
+            
+        handler(self.event, {})
+        
+        boto_mock.assert_any_call('UpdateItem', {
+            'TableName': 'hitsTableName1',
+            'Key': {'path': self.event['path']},
+            'UpdateExpression': 'SET timestamp :ts',
+            'ExpressionAttributeValues': {':ts': 12345}
+        })
+    ```
+
+* After running `pytest` add the code to set make a call that sets timestamp (Don't forget to import the `time` module):
+    ```python
+    import time
+    ...
+    table.update_item(
+        Key={'path': event['path']},
+        UpdateExpression='SET timestamp :ts',
+        ExpressionAttributeValues={':ts': time.time()}
+    )
+    ```
+    * _Note:_ ideally we'd make only a single call to Dynamo, but we are making 2 for the purposes of demonstration.   
+
+
+
 
 
 ## Useful commands

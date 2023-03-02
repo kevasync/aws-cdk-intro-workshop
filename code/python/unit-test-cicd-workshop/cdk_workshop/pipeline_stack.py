@@ -23,8 +23,10 @@ class WorkshopPipelineStack(Stack):
                 "Synth",
                 input=pipelines.CodePipelineSource.code_commit(repo, "master"),
                 commands=[
-                    "npm install -g aws-cdk",  # Installs the cdk cli on Codebuild
-                    "pip install -r requirements.txt",  # Instructs Codebuild to install required packages
+                    "npm install -g aws-cdk",  
+                    "pip install -r requirements.txt",  
+                    "pip install -r requirements-dev.txt", # installs pytest
+                    "pytest", # runs tests
                     "npx cdk synth",
                 ]
             ),
